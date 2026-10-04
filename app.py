@@ -99,17 +99,17 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta con Groq Llama 3.1 + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta con Groq Llama 3 (llama3-70b-8192) + Sintesi Vocale ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
     with st.spinner("BeeVoice sta rispondendo..."):
         try:
-            # Generazione risposta del cervello con Groq (Llama 3.1 70B Versatile)
+            # Modello Llama 3 70B attivo su Groq
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
-                model="llama-3.1-70b-versatile",
+                model="llama3-70b-8192",
                 temperature=0.5,
                 max_tokens=150
             )
