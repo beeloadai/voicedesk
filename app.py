@@ -47,7 +47,6 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "Buongiorno! Sono VoiceDesk di Beeload. Come posso aiutarla oggi?"}
     ]
 
-# Prompt ottimizzato per risposte ultra-brevi e veloci
 SYSTEM_INSTRUCTION = """
 Sei VoiceDesk, l'assistente vocale umano e professionale di Beeload per la gestione degli appuntamenti.
 REGOLE DI CONVERSAZIONE:
@@ -56,8 +55,9 @@ REGOLE DI CONVERSAZIONE:
 3. Se l'utente ti fornisce un'informazione (es. orario o nome), confermala subito e chiedi solo il dato mancante.
 """
 
+# Utilizziamo gemini-2.5-flash per evitare i limiti di quota
 model = genai.GenerativeModel(
-    model_name="gemini-3.8-flash",
+    model_name="gemini-2.5-flash",
     system_instruction=SYSTEM_INSTRUCTION
 )
 
@@ -115,11 +115,11 @@ if prompt_da_elaborare:
             response = st.session_state.chat_session.send_message(prompt_da_elaborare)
             risposta_testo = response.text
 
-            # Generazione audio con modello a bassa latenza (eleven_flash_v2_5) e voce femminile (Charlotte)
+            # Generazione audio con modello a bassa latenza e voce femminile (Charlotte)
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
-                voice_id="XB0fDUnXU5powFXDhCwa",  # ID voce femminile naturale (Charlotte)
-                model_id="eleven_flash_v2_5"      # Modello ultra-veloce a bassissima latenza
+                voice_id="XB0fDUnXU5powFXDhCwa",
+                model_id="eleven_flash_v2_5"
             )
             
             audio_bytes_response = b"".join(audio_generator)
