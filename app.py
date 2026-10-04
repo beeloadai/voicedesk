@@ -26,18 +26,16 @@ if not groq_key or not elevenlabs_key:
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Selezione Modello di Chat Ottimale (Predilige Llama-3.3-70b se disponibile, altrimenti Llama-3.1)
+# Selezione Modello di Chat Ottimale
 def select_best_groq_model():
     try:
         models = groq_client.models.list()
         model_ids = [m.id for m in models.data]
         
-        # Priorità a modelli con elevata capacità di ragionamento in italiano
         for preferred in ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]:
             if preferred in model_ids:
                 return preferred
                 
-        # Fallback su primo modello chat valido
         valid_models = [m for m in model_ids if not any(x in m.lower() for x in ["whisper", "guard", "vision"])]
         return valid_models[0] if valid_models else "llama-3.1-8b-instant"
     except Exception:
@@ -63,7 +61,7 @@ def save_booking(booking_data):
     with open(BOOKINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(bookings, f, ensure_ascii=False, indent=2)
 
-# 4. Inizializzazione Sessione e Memoria di Stato
+# 4. Inizializzazione Stato e Memoria
 if "booking_slots" not in st.session_state:
     st.session_state.booking_slots = {
         "nome": None,
@@ -72,21 +70,21 @@ if "booking_slots" not in st.session_state:
         "motivo": None
     }
 
-INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso esserle utile?"
+INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso aiutarla?"
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": INITIAL_GREETING}
     ]
 
-# 5. Modulo di Estrazione Dati Strategico (JSON Extractor)
+# 5. Estrazione Dati Strutturati
 def extract_and_update_slots(user_text):
     current = st.session_state.booking_slots
     
     extraction_prompt = f"""
-    Sei un modulo di analisi del testo. Estrai le informazioni per una prenotazione dal messaggio dell'utente.
+    Sei un estrattore di informazioni. Analizza l'ultimo messaggio dell'utente per aggiornare i dati di prenotazione.
     
-    STATO ATTUALE SLOT:
+    STATO ATTUALE:
     - Nome: {current['nome']}
     - Giorno: {current['giorno']}
     - Orario: {current['orario']}
@@ -94,7 +92,7 @@ def extract_and_update_slots(user_text):
     
     MESSAGGIO UTENTE: "{user_text}"
     
-    Estrai SOLO i nuovi dati presenti nel messaggio utente e restituisci un JSON valido con i campi:
+    Restituisci unicamente un oggetto JSON valido con i dati estratti (usa null se non menzionati):
     {{"nome": string/null, "giorno": string/null, "orario": string/null, "motivo": string/null}}
     """
     
@@ -107,67 +105,49 @@ def extract_and_update_slots(user_text):
         )
         extracted = json.loads(completion.choices[0].message.content)
         
-        # Aggiornamento slot di memoria
         for key in current:
             if extracted.get(key) and str(extracted[key]).lower() != "null":
                 st.session_state.booking_slots[key] = extracted[key]
     except Exception:
         pass
 
-# 6. Generazione Risposta Umana Naturale (Conversational Engine)
+# 6. Generazione Risposta Naturale tramite Esempi Reali
 def generate_natural_response(user_text):
     slots = st.session_state.booking_slots
-    
-    # Determina l'obiettivo corrente della conversazione
     missing_slots = [k for k, v in slots.items() if v is None]
     
     if not missing_slots:
-        # Tutti i dati raccolti: salva e genera conferma
         save_booking(slots)
-        system_instruction = f"""
-        Sei BeeVoice, la segretaria esecutiva di Beeload.
-        Tutti i dati dell'appuntamento sono stati raccolti con successo:
-        - Nome: {slots['nome']}
-        - Giorno: {slots['giorno']}
-        - Orario: {slots['orario']}
-        - Motivo: {slots['motivo']}
+        return f"Perfetto, Signor {slots['nome']}. Ho confermato il suo appuntamento per {slots['giorno']} alle ore {slots['orario']} per {slots['motivo']}. La ringrazio e le auguro una buona giornata!"
 
-        Comunica la conferma dell'appuntamento in modo caldo, umano e professionale in italiano fluido.
-        Ringrazia e augura una buona giornata con estrema naturalezza. Massimo 2 frasi.
-        """
-    else:
-        next_target = missing_slots[0]
-        target_descriptions = {
-            "nome": "chiedere con cortesia il nome dell'interlocutore",
-            "giorno": f"confermare l'attenzione verso {slots['nome']} e chiedere per quale giorno desidera fissare l'incontro",
-            "orario": f"confermare la disponibilità per {slots['giorno']} e chiedere l'orario o fascia oraria preferita",
-            "motivo": "chiedere brevemente di cosa desidera trattare o l'argomento della riunione"
-        }
-        
-        system_instruction = f"""
-        Sei BeeVoice, la segretaria esecutiva di Beeload.
-        Stai conducendo una conversazione telefonica reale per fissare un appuntamento.
-        
-        DATI CONFERMATI FINORA:
-        - Nome: {slots['nome']}
-        - Giorno: {slots['giorno']}
-        - Orario: {slots['orario']}
-        - Motivo: {slots['motivo']}
-        
-        OBIETTIVO CORRENTE: Il tuo unico obiettivo ora è {target_descriptions[next_target]}.
-        
-        REGOLE TASSATIVE PER LA NATURALEZZA:
-        1. Parla in modo spontaneo, fluido e professionale, come una vera segretaria di direzione italiana.
-        2. DAI SEMPRE E SOLO DEL "LEI". Mai usare il "tu".
-        3. Riconosci in modo caldo l'ultimo dato fornito dall'utente e fai la domanda successiva in modo fluido.
-        4. NON usare MAI traduzioni letterali dall'inglese (VIETATE frasi come: "non esiti a chiedere", "richieste di assistenza", "come posso aiutarti", "il nostro utente").
-        5. Mantieni la risposta brevissima (massimo 1 o 2 frasi naturali, perfette da pronunciare a voce).
-        6. NON usare parentesi, maiuscole per urlare o formattazione Markdown. Genera solo il testo da pronunciare.
-        """
+    # System Instruction basata su Few-Shot Prompting in italiano naturale
+    system_instruction = """
+Sei BeeVoice, una segretaria di direzione italiana reale, professionale e cordiale.
+Stai gestendo una telefonata per fissare un appuntamento di lavoro.
+
+REGOLE DI CONVERSAZIONE:
+- Rispondi con MASSIMO 1 O 2 FRASI brevi (ideali da ascoltare a voce).
+- Dai SEMPRE del "Lei".
+- Sii spontanea, accogliente e naturale.
+- VIETATI BANALI CALCHI DALL'INGLESE ("non esitare a chiedere", "nostro utente", "come posso assisterti", "assistenza").
+
+ESEMPI DI CONVERSAZIONE REALE:
+Utente: Vorrei fissare un appuntamento.
+Assistente: Molto volentieri. Mi dica pure, con chi ho il piacere di parlare?
+
+Utente: Mario Rossi.
+Assistente: Piacere di conoscerla, Signor Rossi. Per quale giorno desidera fissare l'incontro?
+
+Utente: Giovedì prossimo.
+Assistente: Perfetto per giovedì. Che orario le sarebbe più comodo?
+
+Utente: Verso le tre del pomeriggio.
+Assistente: Benissimo, registrato per le quindici. Di cosa desidera trattare nello specifico durante l'incontro?
+"""
 
     messages = [{"role": "system", "content": system_instruction}]
     
-    # Inserisci le ultime battute per mantenere la coerenza
+    # Manteniamo la cronologia recente
     for msg in st.session_state.messages[-4:]:
         messages.append({"role": msg["role"], "content": msg["content"]})
         
@@ -176,8 +156,8 @@ def generate_natural_response(user_text):
     completion = groq_client.chat.completions.create(
         messages=messages,
         model=ACTIVE_MODEL,
-        temperature=0.3,
-        max_tokens=90
+        temperature=0.2,
+        max_tokens=80
     )
     
     raw_response = completion.choices[0].message.content.strip()
@@ -185,7 +165,7 @@ def generate_natural_response(user_text):
     clean_response = clean_response.replace("*", "").replace("#", "")
     return clean_response
 
-# 7. Rendering Interfaccia Storico Chat
+# 7. Visualizzazione Storico Chat
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
@@ -201,12 +181,11 @@ user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
-# Trascrizione audio tramite Whisper
 if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
     if st.session_state.get("last_audio_bytes") != audio_bytes:
         st.session_state["last_audio_bytes"] = audio_bytes
-        with st.spinner("🎧 Trascrizione in corso..."):
+        with st.spinner("🎧 Ascolto in corso..."):
             try:
                 transcription = groq_client.audio.transcriptions.create(
                     file=("audio.wav", audio_bytes),
@@ -221,19 +200,15 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 9. Pipeline di Elaborazione Principale
+# 9. Elaborazione Risposta + Sintesi Vocale
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     
     with st.spinner("BeeVoice sta rispondendo..."):
         try:
-            # Step 1: Estrazione dati e aggiornamento stato
             extract_and_update_slots(prompt_da_elaborare)
-            
-            # Step 2: Generazione risposta fluida e naturale
             risposta_testo = generate_natural_response(prompt_da_elaborare)
 
-            # Step 3: Sintesi vocale ElevenLabs
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
                 voice_id="Xb7hH8MSUJpSbSDYk0k2",
@@ -242,7 +217,6 @@ if prompt_da_elaborare:
             
             audio_bytes_response = b"".join(audio_generator)
 
-            # Step 4: Registrazione messaggi e aggiornamento UI
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": risposta_testo,
@@ -254,13 +228,13 @@ if prompt_da_elaborare:
         except Exception as e:
             st.error(f"Errore nell'elaborazione: {e}")
 
-# 10. Sidebar Informativa e Monitoraggio Stato
+# 10. Sidebar
 with st.sidebar:
-    st.header("⚙️ Configurazione")
-    st.caption(f"Modello LLM attivo: `{ACTIVE_MODEL}`")
+    st.header("⚙️ Modello Attivo")
+    st.caption(f"`{ACTIVE_MODEL}`")
     
     st.write("---")
-    st.header("📊 Stato Dati Incontro")
+    st.header("📊 Dati Raccolti")
     st.json(st.session_state.booking_slots)
     
     st.write("---")
