@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import streamlit as st
 from groq import Groq
 from elevenlabs.client import ElevenLabs
@@ -25,7 +26,7 @@ if not groq_key or not elevenlabs_key:
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Rilevamento REALE dei modelli attivi sulla TUA API key
+# Rilevamento dei modelli attivi
 def get_available_groq_models():
     try:
         models = groq_client.models.list()
@@ -51,13 +52,16 @@ def load_bookings():
             return []
     return []
 
-# 4. Inizializzazione Sessione Chat
+# 4. Inizializzazione Sessione Chat con Prompt Migliorato
 SYSTEM_INSTRUCTION = """
-Sei BeeVoice, l'assistente vocale umano e professionale di Beeload per la gestione degli appuntamenti.
-REGOLE DI CONVERSAZIONE:
-1. Rispondi SEMPRE in modo brevissimo, naturale e diretto (massimo 1 o 2 frasi concise).
-2. Tieni conto dell'intera cronologia della conversazione: non salutare di nuovo se vi siete già salutati e NON richiedere informazioni già fornite dall'utente.
-3. Se l'utente ti fornisce un'informazione (es. orario o nome), confermala e chiedi solo il dato mancante per completare la prenotazione.
+Sei BeeVoice, il segretario vocale intelligente e cordiale di Beeload per la gestione delle prenotazioni.
+
+MANTENIMENTO CONTESTO E FLUSSO:
+- Esprimiti in modo fluido, caloroso, naturale ed estremamente professionale.
+- PARLA ESCLUSIVAMENTE IN ITALIANO CORRETTO.
+- Non inserire MAI annotazioni tra parentesi (come [nota], (pausa), [inserisci dato], ecc.). Genera SOLO ed ESCLUSIVAMENTE le parole che devi pronunciare direttamente all'utente.
+- Mantieni risposte brevi ed efficaci (2-3 frasi al massimo per la sintesi vocale).
+- Raccogli i dati necessari per l'appuntamento (Nome, Data, Orario, Motivo/Durata) un passo alla volta senza fare troppe domande insieme.
 """
 
 if "messages" not in st.session_state:
@@ -107,7 +111,7 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta + Pulizia Testo + Sintesi Vocale
 if prompt_da_elaborare:
     if not available_models:
         st.error("Nessun modello di chat risulta accessibile con questa API Key di Groq.")
@@ -118,21 +122,27 @@ if prompt_da_elaborare:
     
     selected_model = available_models[0]
     
-    with st.spinner(f"BeeVoice sta rispondendo con {selected_model}..."):
+    with st.spinner("BeeVoice sta elaborando la risposta..."):
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
                 model=selected_model,
-                temperature=0.5,
-                max_tokens=150
+                temperature=0.6,
+                max_tokens=180
             )
 
             risposta_testo = chat_completion.choices[0].message.content.strip()
-            st.session_state.chat_history.append({"role": "assistant", "content": risposta_testo})
+            
+            # FILTRO DI PULIZIA: Rimuove qualsiasi contenuto tra parentesi quadre o tonde prima di mostrare/leggere
+            risposta_pulita = re.sub(r'\[.*?\]|\(.*?\)', '', risposta_testo).strip()
+            if not risposta_pulita:
+                risposta_pulita = risposta_testo
 
-            # Sintesi vocale con voce Alice (ottimizzata, fluida e naturale)
+            st.session_state.chat_history.append({"role": "assistant", "content": risposta_pulita})
+
+            # Sintesi vocale con ElevenLabs sulla risposta pulita
             audio_generator = eleven_client.text_to_speech.convert(
-                text=risposta_testo,
+                text=risposta_pulita,
                 voice_id="Xb7hH8MSUJpSbSDYk0k2",
                 model_id="eleven_flash_v2_5"
             )
@@ -141,7 +151,7 @@ if prompt_da_elaborare:
 
             st.session_state.messages.append({
                 "role": "assistant", 
-                "content": risposta_testo,
+                "content": risposta_pulita,
                 "audio": audio_bytes_response
             })
             
