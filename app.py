@@ -29,23 +29,29 @@ if not elevenlabs_key:
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Selezione sicura del modello Llama attivo
+# Rilevamento dinamico ed esatto del modello valido per il tuo account
 @st.cache_resource
-def get_working_groq_model():
+def get_valid_chat_model():
     try:
         models = groq_client.models.list()
-        model_ids = [m.id for m in models.data]
-        # Cerchiamo solo modelli Llama o Gemma pubblici senza restrizioni di termini
-        for m in model_ids:
-            if "llama-3.3" in m or "llama-3.1" in m or "llama3" in m:
-                if "vision" not in m and "guard" not in m:
-                    return m
-        return "llama-3.1-8b-instant"
+        valid_ids = [m.id for m in models.data]
+        
+        # Filtriamo solo modelli di chat evitando whisper, guard e orpheus/canopylabs
+        usable_models = [
+            m_id for m_id in valid_ids 
+            if "whisper" not in m_id 
+            and "guard" not in m_id 
+            and "canopylabs" not in m_id
+            and "orpheus" not in m_id
+        ]
+        
+        if usable_models:
+            return usable_models[0]
+        return "llama-3.3-70b-versatile"
     except Exception:
-        return "llama-3.1-8b-instant"
+        return "llama-3.3-70b-versatile"
 
-# Selezioniamo direttamente un modello Llama di produzione
-ACTIVE_MODEL = "llama-3.3-70b-versatile"
+ACTIVE_MODEL = get_valid_chat_model()
 
 # 3. Gestione Persistence (bookings.json)
 BOOKINGS_FILE = "bookings.json"
@@ -117,30 +123,19 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta con Groq + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
-    with st.spinner("BeeVoice sta rispondendo..."):
+    with st.spinner(f"BeeVoice sta rispondendo con {ACTIVE_MODEL}..."):
         try:
-            # Fallback dinamico se il modello principale fallisce
-            try:
-                model_to_use = ACTIVE_MODEL
-                chat_completion = groq_client.chat.completions.create(
-                    messages=st.session_state.chat_history,
-                    model=model_to_use,
-                    temperature=0.5,
-                    max_tokens=150
-                )
-            except Exception:
-                model_to_use = get_working_groq_model()
-                chat_completion = groq_client.chat.completions.create(
-                    messages=st.session_state.chat_history,
-                    model=model_to_use,
-                    temperature=0.5,
-                    max_tokens=150
-                )
+            chat_completion = groq_client.chat.completions.create(
+                messages=st.session_state.chat_history,
+                model=ACTIVE_MODEL,
+                temperature=0.5,
+                max_tokens=150
+            )
 
             risposta_testo = chat_completion.choices[0].message.content.strip()
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_testo})
