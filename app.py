@@ -14,23 +14,31 @@ st.set_page_config(
 st.title("🎙 BeeVoice — Agente Prenotazioni Vocale")
 st.caption("Beeload AI R&D Lab — Assistente Vocale B2B")
 
-# 2. Gestione e Validazione API Keys
+# 2. Gestione API Keys
 groq_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY")
 
-if not groq_key:
-    st.error("⚠️ Chiave API Groq non trovata! Inserisci GROQ_API_KEY nei Secrets.")
-    st.stop()
-
-if not elevenlabs_key:
-    st.error("⚠️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
+if not groq_key or not elevenlabs_key:
+    st.error("⚠️ Inserisci GROQ_API_KEY e ELEVENLABS_API_KEY nei Secrets di Streamlit.")
     st.stop()
 
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Modello Groq 100% universale su tutte le API Key
-ACTIVE_MODEL = "llama-3.1-8b-instant"
+# Rilevamento REALE dei modelli attivi sulla TUA API key
+def get_available_groq_models():
+    try:
+        models = groq_client.models.list()
+        # Prendiamo solo modelli idonei alla chat (escludiamo whisper, guard, vision, etc.)
+        valid_chat_models = [
+            m.id for m in models.data 
+            if not any(x in m.id.lower() for x in ["whisper", "guard", "vision", "orpheus", "canopylabs"])
+        ]
+        return valid_chat_models
+    except Exception:
+        return []
+
+available_models = get_available_groq_models()
 
 # 3. Gestione Persistence (bookings.json)
 BOOKINGS_FILE = "bookings.json"
@@ -71,7 +79,7 @@ for msg in st.session_state.messages:
         if "audio" in msg:
             st.audio(msg["audio"], format="audio/mp3")
 
-# 5. Registratore Vocale Nativo
+# 5. Registratore Vocale
 st.write("---")
 st.subheader("🗣️ Parla con BeeVoice")
 
@@ -83,11 +91,9 @@ prompt_da_elaborare = None
 # Gestione Audio con Groq Whisper
 if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
-    
     if st.session_state.get("last_audio_bytes") != audio_bytes:
         st.session_state["last_audio_bytes"] = audio_bytes
-        
-        with st.spinner("🎧 Trascrizione in corso con Groq..."):
+        with st.spinner("🎧 Trascrizione in corso..."):
             try:
                 transcription = groq_client.audio.transcriptions.create(
                     file=("audio.wav", audio_bytes),
@@ -102,16 +108,23 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta + Sintesi Vocale
 if prompt_da_elaborare:
+    if not available_models:
+        st.error("Nessun modello di chat risulta accessibile con questa API Key di Groq.")
+        st.stop()
+        
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
-    with st.spinner("BeeVoice sta rispondendo..."):
+    # Seleziona il primo modello funzionante estratto direttamente dalla tua API
+    selected_model = available_models[0]
+    
+    with st.spinner(f"BeeVoice sta rispondendo con {selected_model}..."):
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
-                model=ACTIVE_MODEL,
+                model=selected_model,
                 temperature=0.5,
                 max_tokens=150
             )
@@ -119,7 +132,7 @@ if prompt_da_elaborare:
             risposta_testo = chat_completion.choices[0].message.content.strip()
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_testo})
 
-            # Voce George (JBFqnCBsd6RMkjVDRZzb) — Default Standard ElevenLabs
+            # Sintesi vocale con voce predefinita standard
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
                 voice_id="JBFqnCBsd6RMkjVDRZzb",
@@ -139,11 +152,19 @@ if prompt_da_elaborare:
         except Exception as e:
             st.error(f"Errore elaborazione: {e}")
 
-# 7. Sidebar — Registro Prenotazioni
+# 7. Sidebar
 with st.sidebar:
+    st.header("⚙️ Modelli Rilevati")
+    if available_models:
+        st.success(f"Modelli attivi trovati: {len(available_models)}")
+        st.caption(f"In uso: `{available_models[0]}`")
+    else:
+        st.warning("Nessun modello valido rilevato.")
+        
+    st.write("---")
     st.header("📋 Registro Prenotazioni")
     prenotazioni = load_bookings()
     if prenotazioni:
         st.dataframe(prenotazioni, use_container_width=True)
     else:
-        st.info("Nessuna prenotazione salvata al momento.")
+        st.info("Nessuna prenotazione salvata.")
