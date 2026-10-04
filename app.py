@@ -74,9 +74,7 @@ for msg in st.session_state.messages:
 st.write("---")
 st.subheader("🗣️ Parla con VoiceDesk")
 
-# Registratore nativo ottimizzato per smartphone
 audio_input_file = st.audio_input("Registra un messaggio vocale")
-
 user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
@@ -89,9 +87,8 @@ if audio_input_file is not None:
     if st.session_state.get("last_audio_bytes") != audio_bytes:
         st.session_state["last_audio_bytes"] = audio_bytes
         
-        with st.spinner("🎧 Trascrizione dell'audio con Gemini in corso..."):
+        with st.spinner("🎧 Trascrizione dell'audio in corso..."):
             try:
-                # Determiniamo il mime type corretto
                 mime_type = audio_input_file.type if hasattr(audio_input_file, 'type') and audio_input_file.type else "audio/wav"
                 
                 audio_part = {
@@ -109,7 +106,7 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Risposta Gemini + Generazione Voce ElevenLabs
+# 6. Risposta Gemini + Generazione Voce ElevenLabs (Nuovo SDK)
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     
@@ -118,11 +115,11 @@ if prompt_da_elaborare:
             response = st.session_state.chat_session.send_message(prompt_da_elaborare)
             risposta_testo = response.text
 
-            # Generazione Audio HD con ElevenLabs
-            audio_generator = eleven_client.generate(
+            # Generazione Audio HD con la nuova sintassi ElevenLabs
+            audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
-                voice="JBFqnCBsd6RMkjVDRZzb",
-                model="eleven_multilingual_v2"
+                voice_id="JBFqnCBsd6RMkjVDRZzb",
+                model_id="eleven_multilingual_v2"
             )
             
             audio_bytes_response = b"".join(audio_generator)
