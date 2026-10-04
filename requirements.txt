@@ -1,3 +1,4 @@
 streamlit
 google-generativeai
-gTTS
+elevenlabs
+streamlit-mic-recorder
