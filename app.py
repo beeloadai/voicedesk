@@ -47,12 +47,13 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "Buongiorno! Sono VoiceDesk di Beeload. Come posso aiutarla oggi?"}
     ]
 
+# Prompt ottimizzato per risposte ultra-brevi e veloci
 SYSTEM_INSTRUCTION = """
 Sei VoiceDesk, l'assistente vocale umano e professionale di Beeload per la gestione degli appuntamenti.
 REGOLE DI CONVERSAZIONE:
-1. Sii conciso, cortese e del tutto naturale (massimo 2-3 frasi per risposta).
-2. Tieni conto dell'intera cronologia: non salutare di nuovo se vi siete già salutati, e NON richiedere informazioni che l'utente ti ha già fornito.
-3. Se l'utente ti dà un'informazione (es. orario o nome), prendine atto e chiedi solo ciò che manca per completare la prenotazione.
+1. Rispondi SEMPRE in modo brevissimo e diretto (massimo 1 o 2 frasi concise).
+2. Tieni conto dell'intera cronologia: non salutare di nuovo se vi siete già salutati e NON richiedere informazioni che l'utente ti ha già fornito.
+3. Se l'utente ti fornisce un'informazione (es. orario o nome), confermala subito e chiedi solo il dato mancante.
 """
 
 model = genai.GenerativeModel(
@@ -70,7 +71,7 @@ for msg in st.session_state.messages:
         if "audio" in msg:
             st.audio(msg["audio"], format="audio/mp3")
 
-# 5. Registratore Vocale Nativo Streamlit
+# 5. Registratore Vocale Nativo
 st.write("---")
 st.subheader("🗣️ Parla con VoiceDesk")
 
@@ -79,15 +80,14 @@ user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
-# Gestione audio registrato con st.audio_input
+# Gestione audio registrato
 if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
     
-    # Evitiamo ri-elaborazioni duplicate al refresh
     if st.session_state.get("last_audio_bytes") != audio_bytes:
         st.session_state["last_audio_bytes"] = audio_bytes
         
-        with st.spinner("🎧 Trascrizione dell'audio in corso..."):
+        with st.spinner("🎧 Ascolto in corso..."):
             try:
                 mime_type = audio_input_file.type if hasattr(audio_input_file, 'type') and audio_input_file.type else "audio/wav"
                 
@@ -96,17 +96,17 @@ if audio_input_file is not None:
                     "data": audio_bytes
                 }
                 transcription_response = model.generate_content([
-                    "Trascrivi fedelmente questo messaggio vocale in italiano. Restituisci ESCLUSIVAMENTE il testo trascritto:", 
+                    "Trascrivi in italiano questo messaggio vocale. Restituisci SOLO il testo:", 
                     audio_part
                 ])
                 prompt_da_elaborare = transcription_response.text.strip()
             except Exception as e:
-                st.error(f"Errore durante la trascrizione dell'audio: {e}")
+                st.error(f"Errore trascrizione: {e}")
 
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Risposta Gemini + Generazione Voce ElevenLabs (Nuovo SDK)
+# 6. Risposta Gemini + Generazione Voce Femminile Ultra-Veloce
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     
@@ -115,11 +115,11 @@ if prompt_da_elaborare:
             response = st.session_state.chat_session.send_message(prompt_da_elaborare)
             risposta_testo = response.text
 
-            # Generazione Audio HD con la nuova sintassi ElevenLabs
+            # Generazione audio con modello a bassa latenza (eleven_flash_v2_5) e voce femminile (Charlotte)
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
-                voice_id="JBFqnCBsd6RMkjVDRZzb",
-                model_id="eleven_multilingual_v2"
+                voice_id="XB0fDUnXU5powFXDhCwa",  # ID voce femminile naturale (Charlotte)
+                model_id="eleven_flash_v2_5"      # Modello ultra-veloce a bassissima latenza
             )
             
             audio_bytes_response = b"".join(audio_generator)
@@ -133,7 +133,7 @@ if prompt_da_elaborare:
             st.rerun()
 
         except Exception as e:
-            st.error(f"Errore durante l'elaborazione della risposta: {e}")
+            st.error(f"Errore elaborazione: {e}")
 
 # 7. Sidebar — Registro Prenotazioni
 with st.sidebar:
