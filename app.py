@@ -52,27 +52,29 @@ def load_bookings():
             return []
     return []
 
-# 4. Inizializzazione Sessione Chat con Prompt Migliorato
+# 4. Inizializzazione Sessione Chat con Prompt Professionale e Naturale
 SYSTEM_INSTRUCTION = """
-Sei BeeVoice, il segretario vocale intelligente e cordiale di Beeload per la gestione delle prenotazioni.
+Sei BeeVoice, la segretaria personale ed esecutiva di Beeload. Il tuo compito è accogliere i clienti e fissare appuntamenti di lavoro con cortesia, eleganza e naturalezza.
 
-MANTENIMENTO CONTESTO E FLUSSO:
-- Esprimiti in modo fluido, caloroso, naturale ed estremamente professionale.
-- PARLA ESCLUSIVAMENTE IN ITALIANO CORRETTO.
-- Non inserire MAI annotazioni tra parentesi (come [nota], (pausa), [inserisci dato], ecc.). Genera SOLO ed ESCLUSIVAMENTE le parole che devi pronunciare direttamente all'utente.
-- Mantieni risposte brevi ed efficaci (2-3 frasi al massimo per la sintesi vocale).
-- Raccogli i dati necessari per l'appuntamento (Nome, Data, Orario, Motivo/Durata) un passo alla volta senza fare troppe domande insieme.
+REGOLE TASSATIVE DI LINGUAGGIO E TONO:
+1. Usa un italiano naturale, fluido e professionale. Evita assolutamente calchi sintattici dall'inglese (es. NON dire mai "comunicarci meglio", "cosa posso fare per te oggi", "dammi il tuo nome").
+2. Dai del "Lei" all'interlocutore in modo cordiale ma formale.
+3. Chiedi il nome in modo elegante (es. "Con chi ho il piacere di parlare?" oppure "Mi dica pure il suo nome").
+4. Mantieni le risposte brevi e mirate (massimo 2 frasi), perfette per essere ascoltate a voce.
+5. Non usare mai parentesi, note di regia o testo formattato in markdown. Rispondi solo con le parole esatte da pronunciare.
 """
+
+INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso aiutarla?"
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "Buongiorno! Sono BeeVoice di Beeload. Come posso aiutarla oggi?"}
+        {"role": "assistant", "content": INITIAL_GREETING}
     ]
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
-        {"role": "assistant", "content": "Buongiorno! Sono BeeVoice di Beeload. Come posso aiutarla oggi?"}
+        {"role": "assistant", "content": INITIAL_GREETING}
     ]
 
 # Visualizzazione Storico Chat
@@ -127,20 +129,20 @@ if prompt_da_elaborare:
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
                 model=selected_model,
-                temperature=0.6,
-                max_tokens=180
+                temperature=0.3,  # Ridotta per risposte più precise e meno "creative"
+                max_tokens=120
             )
 
             risposta_testo = chat_completion.choices[0].message.content.strip()
             
-            # FILTRO DI PULIZIA: Rimuove qualsiasi contenuto tra parentesi quadre o tonde prima di mostrare/leggere
+            # Rimuove eventuali parentesi residuali
             risposta_pulita = re.sub(r'\[.*?\]|\(.*?\)', '', risposta_testo).strip()
             if not risposta_pulita:
                 risposta_pulita = risposta_testo
 
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_pulita})
 
-            # Sintesi vocale con ElevenLabs sulla risposta pulita
+            # Sintesi vocale ElevenLabs
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_pulita,
                 voice_id="Xb7hH8MSUJpSbSDYk0k2",
