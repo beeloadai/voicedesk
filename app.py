@@ -19,7 +19,7 @@ groq_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY")
 
 if not groq_key:
-    st.error("⚠️️ Chiave API Groq non trovata! Inserisci GROQ_API_KEY nei Secrets.")
+    st.error("⚠️ Chiave API Groq non trovata! Inserisci GROQ_API_KEY nei Secrets.")
     st.stop()
 
 if not elevenlabs_key:
@@ -29,24 +29,23 @@ if not elevenlabs_key:
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Selezione automatica del modello disponibile su Groq
+# Selezione sicura del modello Llama attivo
 @st.cache_resource
 def get_working_groq_model():
     try:
         models = groq_client.models.list()
         model_ids = [m.id for m in models.data]
-        # Priorità ai modelli Llama e Mixtral per la chat
-        preferred = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
-        for p in preferred:
-            if p in model_ids:
-                return p
-        # Fallback al primo modello disponibile se non in lista
-        chat_models = [m for m in model_ids if "whisper" not in m]
-        return chat_models[0] if chat_models else "llama-3.1-8b-instant"
+        # Cerchiamo solo modelli Llama o Gemma pubblici senza restrizioni di termini
+        for m in model_ids:
+            if "llama-3.3" in m or "llama-3.1" in m or "llama3" in m:
+                if "vision" not in m and "guard" not in m:
+                    return m
+        return "llama-3.1-8b-instant"
     except Exception:
         return "llama-3.1-8b-instant"
 
-ACTIVE_MODEL = get_working_groq_model()
+# Selezioniamo direttamente un modello Llama di produzione
+ACTIVE_MODEL = "llama-3.3-70b-versatile"
 
 # 3. Gestione Persistence (bookings.json)
 BOOKINGS_FILE = "bookings.json"
@@ -123,14 +122,26 @@ if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
-    with st.spinner(f"BeeVoice sta rispondendo ({ACTIVE_MODEL})..."):
+    with st.spinner("BeeVoice sta rispondendo..."):
         try:
-            chat_completion = groq_client.chat.completions.create(
-                messages=st.session_state.chat_history,
-                model=ACTIVE_MODEL,
-                temperature=0.5,
-                max_tokens=150
-            )
+            # Fallback dinamico se il modello principale fallisce
+            try:
+                model_to_use = ACTIVE_MODEL
+                chat_completion = groq_client.chat.completions.create(
+                    messages=st.session_state.chat_history,
+                    model=model_to_use,
+                    temperature=0.5,
+                    max_tokens=150
+                )
+            except Exception:
+                model_to_use = get_working_groq_model()
+                chat_completion = groq_client.chat.completions.create(
+                    messages=st.session_state.chat_history,
+                    model=model_to_use,
+                    temperature=0.5,
+                    max_tokens=150
+                )
+
             risposta_testo = chat_completion.choices[0].message.content.strip()
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_testo})
 
