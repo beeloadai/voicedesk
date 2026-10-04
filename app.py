@@ -28,7 +28,8 @@ if not api_key:
 
 # Inizializzazione Client Gemini con SDK ufficiale google-generativeai
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-1.5-flash-latest")
+
 
 # ---------------------------------------------------------
 # 3. Gestione Persistence (bookings.json)
