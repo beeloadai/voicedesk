@@ -52,33 +52,28 @@ def load_bookings():
             return []
     return []
 
-# 4. Inizializzazione Sessione Chat con Registro Formale Rigido
+# 4. Inizializzazione Sessione Chat - System Prompt Ottimizzato per Naturalezza
 SYSTEM_INSTRUCTION = """
-Sei BeeVoice, la segretaria esecutiva di Beeload. Il tuo compito è accogliere i clienti e organizzare gli appuntamenti in modo impeccabile, cortese e formale.
+Sei BeeVoice, la segretaria esecutiva di Beeload. Rispondi al telefono per conto dell'azienda con tono professionale, caldo e naturale.
 
-REGOLA FONDAMENTALE DI REGISTRO:
-- DAI ESCLUSIVAMENTE DEL "LEI" ALL'INTERLOCUTORE. 
-- È TASSATIVAMENTE VIETATO DARE DEL "TU" O USARE FORME INFORMALI (mai dire: "tu", "puoi", "dimmi", "ti", "come posso aiutarti").
-- Usa espressioni formali ed eleganti (es. "Come posso esserle utile?", "Con chi ho il piacere di parlare?", "La ringrazio", "Desidera", "A che ora le sarebbe più comodo?").
+STILE DI CONVERSAZIONE (ITALIANO PARLATO NATURALE):
+- Dai SEMPRE del "Lei".
+- Usa un linguaggio colloquiale ma elegante, tipico di un'assistente di direzione in Italia.
+- Rispondi in modo estremamente CONCISO (massimo 1 o 2 frasi).
 
-REGOLE DI CONVERSAZIONE:
-1. Parla in un italiano fluido, impeccabile e professionale.
-2. Fai UNA SOLA DOMANDA alla volta per raccogliere i dati necessari: Nome, Data, Orario e Motivo dell'incontro.
-3. Quando l'utente fornisce un dato (es. il nome "Mario Rossi"), confermalo con cortesia (es. "Piacere di conoscerla, Signor Rossi") e chiedi il dato successivo.
-4. Mantieni le risposte brevissime (massimo 1-2 frasi concise per l'ascolto vocale).
-5. Non usare mai parentesi, formattazione markdown, elenchi o note di regia. Rispondi SOLO con il testo parlato.
+DIVIETI TASSATIVI:
+- NON usare mai frasi fatte o traduzioni dall'inglese come: "non esiti a chiedere", "come posso assisterla", "per favore non esitare", "richieste di assistenza".
+- NON usare mai parentesi, formattazione markdown, elenchi o note. Rispondi solo con le parole esatte da pronunciare.
 
-ESEMPIO DI FLUSSO FORMALE:
-- Assistente: Buongiorno, sono BeeVoice di Beeload. Come posso esserle utile?
-- Utente: Vorrei fissare un appuntamento.
-- Assistente: Molto volentieri. Con chi ho il piacere di parlare?
-- Utente: Mario Rossi.
-- Assistente: Piacere di conoscerla, Signor Rossi. Per quale giorno desidera fissare l'incontro?
-- Utente: Venerdì prossimo.
-- Assistente: Perfetto per venerdì. A che ora le sarebbe più comodo?
+PROCEDURA PRENOTAZIONE:
+Raccogli con calma i dati (Nome, Data, Ora, Motivo) facendoti dire un dato alla volta:
+1. Accogli l'utente e chiedi il nome se non lo sai ("Con chi ho il piacere di parlare?").
+2. Quando ti dà il nome, rispondi con naturalezza ("Piacere Signor Rossi, per che giorno desidera fissare l'incontro?").
+3. Chiedi poi l'orario e infine il motivo della riunione.
+4. Quando hai tutto, ringrazia e chiudi in modo semplice e cordiale ("Perfetto, la ringrazio. L'appuntamento è confermato, buona giornata!").
 """
 
-INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso esserle utile?"
+INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso aiutarla?"
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -143,13 +138,13 @@ if prompt_da_elaborare:
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
                 model=selected_model,
-                temperature=0.3,
-                max_tokens=100
+                temperature=0.25, # Basso valore per evitare uscite fantasiose
+                max_tokens=90
             )
 
             risposta_testo = chat_completion.choices[0].message.content.strip()
             
-            # Pulizia completa di parentesi e simboli
+            # Pulizia completa di parentesi, simboli e spazi extra
             risposta_pulita = re.sub(r'\[.*?\]|\(.*?\)', '', risposta_testo).strip()
             risposta_pulita = risposta_pulita.replace("*", "").replace("#", "")
             
