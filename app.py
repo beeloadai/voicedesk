@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import streamlit as st
 from groq import Groq
 from elevenlabs.client import ElevenLabs
@@ -12,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("🎙 BeeVoice — Agente Prenotazioni Vocale")
-st.caption("Beeload AI R&D Lab — Assistente Vocale B2B (Architettura Deterministica)")
+st.caption("Beeload AI R&D Lab — Assistente Vocale B2B")
 
 # 2. Gestione API Keys
 groq_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
@@ -62,21 +63,25 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": INITIAL_GREETING}
     ]
 
-# 5. Estrattore Dati JSON via Groq (Zero Generazione Testo)
-def extract_booking_slots(user_text, current_slots):
+# 5. Parsing Dati Avanzato (con Fallback e Protezione Blocco Loop)
+def parse_and_update_slots(user_text):
+    current = st.session_state.booking_slots
+    
     prompt = f"""
-    Sei un parser di dati. Analizza l'input dell'utente ed estrai le informazioni.
-    STATO ATTUALE: {json.dumps(current_slots, ensure_ascii=False)}
-    INPUT UTENTE: "{user_text}"
+    Estrai i dati da questo testo per una prenotazione.
+    STATO ATTUALE: {json.dumps(current, ensure_ascii=False)}
+    TESTO UTENTE: "{user_text}"
 
-    Restituisci ESCLUSIVAMENTE un oggetto JSON valido con queste chiavi:
-    - "nome": nome dell'utente o null
-    - "giorno": data/giorno o null
-    - "orario": orario/fascia oraria o null
-    - "motivo": argomento dell'incontro o null
-
-    Rispondi SOLTANTO con il JSON.
+    Restituisci ESCLUSIVAMENTE un JSON con questi campi esatti:
+    {{
+        "nome": "nome e cognome se presente, altrimenti null",
+        "giorno": "data o giorno se presente, altrimenti null",
+        "orario": "ora o fascia oraria se presente, altrimenti null",
+        "motivo": "motivo o argomento se presente, altrimenti null"
+    }}
     """
+    
+    extracted = {}
     try:
         completion = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
@@ -84,12 +89,32 @@ def extract_booking_slots(user_text, current_slots):
             temperature=0.0,
             response_format={"type": "json_object"}
         )
-        return json.loads(completion.choices[0].message.content)
+        extracted = json.loads(completion.choices[0].message.content)
     except Exception:
-        return {}
+        extracted = {}
 
-# 6. Generatore Deterministico della Risposta (100% Italiano Perfetto)
-def get_deterministic_response():
+    # Aggiornamento slot tramite JSON estratto
+    for key in ["nome", "giorno", "orario", "motivo"]:
+        val = extracted.get(key)
+        if val and str(val).strip().lower() not in ["null", "none", "", "non specificato"]:
+            st.session_state.booking_slots[key] = str(val).strip()
+
+    # FALLBACK DETERMINISTICO: Evita che il sistema si blocchi se il JSON restituisce null
+    slots = st.session_state.booking_slots
+    clean_input = user_text.strip()
+    
+    # Se il nome è ancora vuoto e l'utente ha inserito 1-3 parole, salva direttamente l'input come Nome
+    if not slots["nome"] and len(clean_input.split()) <= 4 and not any(char.isdigit() for char in clean_input):
+        st.session_state.booking_slots["nome"] = clean_input.title()
+    elif slots["nome"] and not slots["giorno"] and ("lun" in clean_input.lower() or "mar" in clean_input.lower() or "mer" in clean_input.lower() or "gio" in clean_input.lower() or "ven" in clean_input.lower() or "sab" in clean_input.lower() or "dom" in clean_input.lower() or "domani" in clean_input.lower() or "oggi" in clean_input.lower()):
+        st.session_state.booking_slots["giorno"] = clean_input
+    elif slots["nome"] and slots["giorno"] and not slots["orario"] and (any(char.isdigit() for char in clean_input) or ":" in clean_input or "pomeriggio" in clean_input.lower() or "mattina" in clean_input.lower()):
+        st.session_state.booking_slots["orario"] = clean_input
+    elif slots["nome"] and slots["giorno"] and slots["orario"] and not slots["motivo"]:
+        st.session_state.booking_slots["motivo"] = clean_input
+
+# 6. Generazione della Risposta
+def get_next_response():
     slots = st.session_state.booking_slots
 
     if not slots["nome"]:
@@ -101,7 +126,7 @@ def get_deterministic_response():
     if not slots["motivo"]:
         return "Ottimo. Di cosa desidera trattare durante l'incontro?"
 
-    # Tutti i dati raccolti
+    # Tutti i dati completati
     if not st.session_state.completed:
         booking_record = {
             "nome": slots["nome"],
@@ -121,7 +146,7 @@ for msg in st.session_state.messages:
         if "audio" in msg:
             st.audio(msg["audio"], format="audio/mp3")
 
-# 8. Registratore Vocale / Input Testo
+# 8. Input Vocale e Testuale
 st.write("---")
 st.subheader("🗣️ Parla con BeeVoice")
 
@@ -149,24 +174,19 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 9. Esecuzione del Flusso
+# 9. Pipeline di Esecuzione
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
 
     with st.spinner("BeeVoice sta elaborando..."):
         try:
-            # 1. Estraggo i dati senza far generare testo all'LLM
-            extracted = extract_booking_slots(prompt_da_elaborare, st.session_state.booking_slots)
+            # 1. Parsing e aggiornamento sicuro degli slot
+            parse_and_update_slots(prompt_da_elaborare)
 
-            # 2. Aggiorno gli slot
-            for k, v in extracted.items():
-                if v and str(v).lower() != "null" and k in st.session_state.booking_slots:
-                    st.session_state.booking_slots[k] = v
+            # 2. Selezione della frase di risposta
+            risposta_testo = get_next_response()
 
-            # 3. Ottengo la frase deterministica garantita
-            risposta_testo = get_deterministic_response()
-
-            # 4. Sintesi Vocale ElevenLabs
+            # 3. Sintesi Vocale ElevenLabs
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
                 voice_id="Xb7hH8MSUJpSbSDYk0k2",
@@ -174,6 +194,7 @@ if prompt_da_elaborare:
             )
             audio_bytes_response = b"".join(audio_generator)
 
+            # 4. Salvataggio messaggio ed esecuzione rerun
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": risposta_testo,
@@ -185,10 +206,16 @@ if prompt_da_elaborare:
         except Exception as e:
             st.error(f"Errore nell'elaborazione: {e}")
 
-# 10. Sidebar
+# 10. Sidebar - Monitoraggio
 with st.sidebar:
     st.header("📊 Stato Dati Incontro")
     st.json(st.session_state.booking_slots)
+
+    if st.button("🔄 Reset Conversazione"):
+        st.session_state.booking_slots = {"nome": None, "giorno": None, "orario": None, "motivo": None}
+        st.session_state.completed = False
+        st.session_state.messages = [{"role": "assistant", "content": INITIAL_GREETING}]
+        st.rerun()
 
     st.write("---")
     st.header("📋 Registro Prenotazioni")
