@@ -23,34 +23,14 @@ if not groq_key:
     st.stop()
 
 if not elevenlabs_key:
-    st.error("⚠️️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
+    st.error("⚠️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
     st.stop()
 
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Selezione automatica del modello valido per la chat su Groq
-@st.cache_resource
-def get_valid_chat_model():
-    try:
-        models = groq_client.models.list()
-        valid_ids = [m.id for m in models.data]
-        
-        usable_models = [
-            m_id for m_id in valid_ids 
-            if "whisper" not in m_id 
-            and "guard" not in m_id 
-            and "canopylabs" not in m_id
-            and "orpheus" not in m_id
-        ]
-        
-        if usable_models:
-            return usable_models[0]
-        return "llama-3.3-70b-versatile"
-    except Exception:
-        return "llama-3.3-70b-versatile"
-
-ACTIVE_MODEL = get_valid_chat_model()
+# Selezione diretta del modello Groq di produzione
+ACTIVE_MODEL = "llama-3.3-70b-versatile"
 
 # 3. Gestione Persistence (bookings.json)
 BOOKINGS_FILE = "bookings.json"
@@ -122,7 +102,7 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs (Voce Default Gratuita)
+# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs (Voce Standard Garantita)
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
@@ -139,10 +119,10 @@ if prompt_da_elaborare:
             risposta_testo = chat_completion.choices[0].message.content.strip()
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_testo})
 
-            # Usa la voce predefinita gratuita "Rachel" (21m00Tcm4TlvDq8ikWAM) con modello multilingua
+            # Voce George (JBFqnCBsd6RMkjVDRZzb) — Default 100% free per API ElevenLabs
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
-                voice_id="21m00Tcm4TlvDq8ikWAM",
+                voice_id="JBFqnCBsd6RMkjVDRZzb",
                 model_id="eleven_multilingual_v2"
             )
             
