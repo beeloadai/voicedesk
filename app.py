@@ -3,7 +3,6 @@ import json
 import streamlit as st
 import google.generativeai as genai
 from elevenlabs.client import ElevenLabs
-from streamlit_mic_recorder import mic_recorder
 
 # 1. Configurazione Pagina Streamlit
 st.set_page_config(
@@ -42,7 +41,7 @@ def load_bookings():
             return []
     return []
 
-# 4. Inizializzazione Sessione e Modello
+# 4. Inizializzazione Stato Sessione e Modello
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Buongiorno! Sono VoiceDesk di Beeload. Come posso aiutarla oggi?"}
@@ -71,35 +70,33 @@ for msg in st.session_state.messages:
         if "audio" in msg:
             st.audio(msg["audio"], format="audio/mp3")
 
-# 5. Sezione Microfono e Input
+# 5. Registratore Vocale Nativo Streamlit
 st.write("---")
-st.markdown("### 🗣️ Interagisci con VoiceDesk")
+st.subheader("🗣️ Parla con VoiceDesk")
 
-# Pulsante di registrazione vocale dedicato
-audio_record = mic_recorder(
-    start_prompt="🎙️ Clicca qui per Parlare",
-    stop_prompt="⏹️ Clicca qui per Fermare e Inviare",
-    key='mic_input',
-    use_container_width=True
-)
+# Registratore nativo ottimizzato per smartphone
+audio_input_file = st.audio_input("Registra un messaggio vocale")
 
 user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
-# Elaborazione Audio Registrato
-if audio_record and isinstance(audio_record, dict) and 'bytes' in audio_record and audio_record['bytes']:
-    audio_bytes_recorded = audio_record['bytes']
+# Gestione audio registrato con st.audio_input
+if audio_input_file is not None:
+    audio_bytes = audio_input_file.read()
     
-    # Evitiamo di ri-elaborare lo stesso audio al refresh
-    if st.session_state.get("last_audio_bytes") != audio_bytes_recorded:
-        st.session_state["last_audio_bytes"] = audio_bytes_recorded
+    # Evitiamo ri-elaborazioni duplicate al refresh
+    if st.session_state.get("last_audio_bytes") != audio_bytes:
+        st.session_state["last_audio_bytes"] = audio_bytes
         
-        with st.spinner("🎧 Trascrizione dell'audio in corso..."):
+        with st.spinner("🎧 Trascrizione dell'audio con Gemini in corso..."):
             try:
+                # Determiniamo il mime type corretto
+                mime_type = audio_input_file.type if hasattr(audio_input_file, 'type') and audio_input_file.type else "audio/wav"
+                
                 audio_part = {
-                    "mime_type": "audio/wav",
-                    "data": audio_bytes_recorded
+                    "mime_type": mime_type,
+                    "data": audio_bytes
                 }
                 transcription_response = model.generate_content([
                     "Trascrivi fedelmente questo messaggio vocale in italiano. Restituisci ESCLUSIVAMENTE il testo trascritto:", 
@@ -107,12 +104,12 @@ if audio_record and isinstance(audio_record, dict) and 'bytes' in audio_record a
                 ])
                 prompt_da_elaborare = transcription_response.text.strip()
             except Exception as e:
-                st.error(f"Errore nella trascrizione audio: {e}")
+                st.error(f"Errore durante la trascrizione dell'audio: {e}")
 
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Risposta e Generazione Voce ElevenLabs
+# 6. Risposta Gemini + Generazione Voce ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     
@@ -139,7 +136,7 @@ if prompt_da_elaborare:
             st.rerun()
 
         except Exception as e:
-            st.error(f"Errore nell'elaborazione della risposta: {e}")
+            st.error(f"Errore durante l'elaborazione della risposta: {e}")
 
 # 7. Sidebar — Registro Prenotazioni
 with st.sidebar:
