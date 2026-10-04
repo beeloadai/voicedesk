@@ -23,20 +23,19 @@ if not groq_key:
     st.stop()
 
 if not elevenlabs_key:
-    st.error("⚠️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
+    st.error("⚠️️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
     st.stop()
 
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Rilevamento dinamico ed esatto del modello valido per il tuo account
+# Selezione automatica del modello valido per la chat su Groq
 @st.cache_resource
 def get_valid_chat_model():
     try:
         models = groq_client.models.list()
         valid_ids = [m.id for m in models.data]
         
-        # Filtriamo solo modelli di chat evitando whisper, guard e orpheus/canopylabs
         usable_models = [
             m_id for m_id in valid_ids 
             if "whisper" not in m_id 
@@ -123,12 +122,12 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs (Voce Default Gratuita)
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
-    with st.spinner(f"BeeVoice sta rispondendo con {ACTIVE_MODEL}..."):
+    with st.spinner("BeeVoice sta rispondendo..."):
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
@@ -140,11 +139,11 @@ if prompt_da_elaborare:
             risposta_testo = chat_completion.choices[0].message.content.strip()
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_testo})
 
-            # Generazione audio HD con ElevenLabs (Voce Charlotte - Flash v2.5)
+            # Usa la voce predefinita gratuita "Rachel" (21m00Tcm4TlvDq8ikWAM) con modello multilingua
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
-                voice_id="XB0fDUnXU5powFXDhCwa",
-                model_id="eleven_flash_v2_5"
+                voice_id="21m00Tcm4TlvDq8ikWAM",
+                model_id="eleven_multilingual_v2"
             )
             
             audio_bytes_response = b"".join(audio_generator)
