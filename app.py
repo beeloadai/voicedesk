@@ -23,7 +23,7 @@ if not groq_key:
     st.stop()
 
 if not elevenlabs_key:
-    st.error("⚠️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
+    st.error("⚠️️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
     st.stop()
 
 groq_client = Groq(api_key=groq_key.strip())
@@ -77,7 +77,7 @@ user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
-# Gestione Audio con Groq Whisper (Trascrizione ad altissima velocità)
+# Gestione Audio con Groq Whisper
 if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
     
@@ -99,17 +99,17 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta con Groq Llama 3.3 Versatile + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta con Groq Llama 3.1 8B Instant + Sintesi Vocale ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
     with st.spinner("BeeVoice sta rispondendo..."):
         try:
-            # Modello Llama 3.3 70B attivo su Groq Cloud
+            # Usiamo il modello Instant garantito e velocissimo
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.5,
                 max_tokens=150
             )
