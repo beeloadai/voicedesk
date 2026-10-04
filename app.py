@@ -19,15 +19,34 @@ groq_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY")
 
 if not groq_key:
-    st.error("⚠️ Chiave API Groq non trovata! Inserisci GROQ_API_KEY nei Secrets.")
+    st.error("⚠️️ Chiave API Groq non trovata! Inserisci GROQ_API_KEY nei Secrets.")
     st.stop()
 
 if not elevenlabs_key:
-    st.error("⚠️️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
+    st.error("⚠️ Chiave API ElevenLabs non trovata! Inserisci ELEVENLABS_API_KEY nei Secrets.")
     st.stop()
 
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
+
+# Selezione automatica del modello disponibile su Groq
+@st.cache_resource
+def get_working_groq_model():
+    try:
+        models = groq_client.models.list()
+        model_ids = [m.id for m in models.data]
+        # Priorità ai modelli Llama e Mixtral per la chat
+        preferred = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
+        for p in preferred:
+            if p in model_ids:
+                return p
+        # Fallback al primo modello disponibile se non in lista
+        chat_models = [m for m in model_ids if "whisper" not in m]
+        return chat_models[0] if chat_models else "llama-3.1-8b-instant"
+    except Exception:
+        return "llama-3.1-8b-instant"
+
+ACTIVE_MODEL = get_working_groq_model()
 
 # 3. Gestione Persistence (bookings.json)
 BOOKINGS_FILE = "bookings.json"
@@ -99,17 +118,16 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta con Groq Llama 3.1 8B Instant + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta con Groq + Sintesi Vocale ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
-    with st.spinner("BeeVoice sta rispondendo..."):
+    with st.spinner(f"BeeVoice sta rispondendo ({ACTIVE_MODEL})..."):
         try:
-            # Usiamo il modello Instant garantito e velocissimo
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
-                model="llama-3.1-8b-instant",
+                model=ACTIVE_MODEL,
                 temperature=0.5,
                 max_tokens=150
             )
