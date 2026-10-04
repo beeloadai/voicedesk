@@ -28,7 +28,7 @@ if not api_key:
 
 # Inizializzazione Client Gemini con SDK ufficiale google-generativeai
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-2.5-flash-latest")
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 
 # ---------------------------------------------------------
