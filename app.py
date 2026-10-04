@@ -1,6 +1,5 @@
 import os
 import json
-import io
 import streamlit as st
 import google.generativeai as genai
 from elevenlabs.client import ElevenLabs
@@ -43,7 +42,7 @@ def load_bookings():
             return []
     return []
 
-# 4. Inizializzazione Stato Sessione e Modello
+# 4. Inizializzazione Sessione e Modello
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Buongiorno! Sono VoiceDesk di Beeload. Come posso aiutarla oggi?"}
@@ -66,84 +65,81 @@ if "chat_session" not in st.session_state:
     st.session_state.chat_session = model.start_chat(history=[])
 
 # Visualizzazione Storico Chat
-for idx, msg in enumerate(st.session_state.messages):
+for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
         if "audio" in msg:
             st.audio(msg["audio"], format="audio/mp3")
 
-# 5. Interfaccia Input Vocale (Microfono) e Testo
+# 5. Sezione Microfono e Input
 st.write("---")
-st.subheader("🗣️ Parla con VoiceDesk")
+st.markdown("### 🗣️ Interagisci con VoiceDesk")
 
-col1, col2 = st.columns([1, 4])
+# Pulsante di registrazione vocale dedicato
+audio_record = mic_recorder(
+    start_prompt="🎙️ Clicca qui per Parlare",
+    stop_prompt="⏹️ Clicca qui per Fermare e Inviare",
+    key='mic_input',
+    use_container_width=True
+)
 
-with col1:
-    audio_record = mic_recorder(
-        start_prompt="🎙️ Parla",
-        stop_prompt="⏹️ Ferma",
-        key='recorder'
-    )
-
-user_text_input = st.chat_input("Oppure scrivi un messaggio qui...")
+user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
-# Gestione input vocale registrato
-if audio_record and 'bytes' in audio_record and audio_record['bytes']:
-    with st.spinner("Trascrizione audio in corso..."):
-        try:
-            audio_data = audio_record['bytes']
-            # Gemini analizza e trascrive direttamente l'audio registrato dal microfono
-            audio_part = {
-                "mime_type": "audio/wav",
-                "data": audio_data
-            }
-            transcription_response = model.generate_content([
-                "Trascrivi fedelmente il seguente messaggio vocale in italiano. Restituisci solo la trascrizione del testo:", 
-                audio_part
-            ])
-            prompt_da_elaborare = transcription_response.text.strip()
-        except Exception as e:
-            st.error(f"Errore durante la trascrizione dell'audio: {e}")
+# Elaborazione Audio Registrato
+if audio_record and isinstance(audio_record, dict) and 'bytes' in audio_record and audio_record['bytes']:
+    audio_bytes_recorded = audio_record['bytes']
+    
+    # Evitiamo di ri-elaborare lo stesso audio al refresh
+    if st.session_state.get("last_audio_bytes") != audio_bytes_recorded:
+        st.session_state["last_audio_bytes"] = audio_bytes_recorded
+        
+        with st.spinner("🎧 Trascrizione dell'audio in corso..."):
+            try:
+                audio_part = {
+                    "mime_type": "audio/wav",
+                    "data": audio_bytes_recorded
+                }
+                transcription_response = model.generate_content([
+                    "Trascrivi fedelmente questo messaggio vocale in italiano. Restituisci ESCLUSIVAMENTE il testo trascritto:", 
+                    audio_part
+                ])
+                prompt_da_elaborare = transcription_response.text.strip()
+            except Exception as e:
+                st.error(f"Errore nella trascrizione audio: {e}")
 
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta e Generazione Voce ElevenLabs
+# 6. Risposta e Generazione Voce ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
-    with st.chat_message("user"):
-        st.write(prompt_da_elaborare)
+    
+    with st.spinner("VoiceDesk sta rispondendo..."):
+        try:
+            response = st.session_state.chat_session.send_message(prompt_da_elaborare)
+            risposta_testo = response.text
 
-    with st.chat_message("assistant"):
-        with st.spinner("VoiceDesk sta elaborando la risposta..."):
-            try:
-                # Invia il messaggio a Gemini mantenendo la conversazione
-                response = st.session_state.chat_session.send_message(prompt_da_elaborare)
-                risposta_testo = response.text
-                st.write(risposta_testo)
+            # Generazione Audio HD con ElevenLabs
+            audio_generator = eleven_client.generate(
+                text=risposta_testo,
+                voice="JBFqnCBsd6RMkjVDRZzb",
+                model="eleven_multilingual_v2"
+            )
+            
+            audio_bytes_response = b"".join(audio_generator)
 
-                # Generazione Audio HD con ElevenLabs
-                audio_generator = eleven_client.generate(
-                    text=risposta_testo,
-                    voice="JBFqnCBsd6RMkjVDRZzb",  # ID voce professionale e naturale
-                    model="eleven_multilingual_v2"
-                )
-                
-                audio_bytes = b"".join(audio_generator)
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": risposta_testo,
+                "audio": audio_bytes_response
+            })
+            
+            st.rerun()
 
-                # Riproduzione automatica dell'audio della risposta
-                st.audio(audio_bytes, format="audio/mp3", autoplay=True)
-
-                st.session_state.messages.append({
-                    "role": "assistant", 
-                    "content": risposta_testo,
-                    "audio": audio_bytes
-                })
-
-            except Exception as e:
-                st.error(f"Errore durante la generazione della risposta: {e}")
+        except Exception as e:
+            st.error(f"Errore nell'elaborazione della risposta: {e}")
 
 # 7. Sidebar — Registro Prenotazioni
 with st.sidebar:
