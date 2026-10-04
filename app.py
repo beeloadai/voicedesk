@@ -77,16 +77,15 @@ user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
-# Gestione Audio con Groq Whisper (Trascrizione ad altissima velocità e zero limiti)
+# Gestione Audio con Groq Whisper (Trascrizione ad altissima velocità)
 if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
     
     if st.session_state.get("last_audio_bytes") != audio_bytes:
         st.session_state["last_audio_bytes"] = audio_bytes
         
-        with st.spinner("🎧 Trascrizione ultra-veloce con Groq..."):
+        with st.spinner("🎧 Trascrizione in corso con Groq..."):
             try:
-                # Trascrizione Groq Whisper Large v3
                 transcription = groq_client.audio.transcriptions.create(
                     file=("audio.wav", audio_bytes),
                     model="whisper-large-v3",
@@ -100,17 +99,17 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta con Groq Llama 3.3 + Sintesi Vocale ElevenLabs
+# 6. Elaborazione Risposta con Groq Llama 3.1 + Sintesi Vocale ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
     
     with st.spinner("BeeVoice sta rispondendo..."):
         try:
-            # Generazione risposta del cervello con Groq (Llama 3.3 70B)
+            # Generazione risposta del cervello con Groq (Llama 3.1 70B Versatile)
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-70b-versatile",
                 temperature=0.5,
                 max_tokens=150
             )
