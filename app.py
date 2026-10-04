@@ -52,19 +52,35 @@ def load_bookings():
             return []
     return []
 
-# 4. Inizializzazione Sessione Chat con Prompt Professionale e Naturale
+# 4. SYSTEM PROMPT AVANZATO — SEGRETERIA ESECUTIVA B2B
 SYSTEM_INSTRUCTION = """
-Sei BeeVoice, la segretaria personale ed esecutiva di Beeload. Il tuo compito è accogliere i clienti e fissare appuntamenti di lavoro con cortesia, eleganza e naturalezza.
+Sei BeeVoice, la responsabile dell'accoglienza e dell'agenda esecutiva di Beeload.
+Il tuo unico obiettivo è fissare un appuntamento lavorativo con il cliente in modo impeccabile, caldo e naturale.
 
-REGOLE TASSATIVE DI LINGUAGGIO E TONO:
-1. Usa un italiano naturale, fluido e professionale. Evita assolutamente calchi sintattici dall'inglese (es. NON dire mai "comunicarci meglio", "cosa posso fare per te oggi", "dammi il tuo nome").
-2. Dai del "Lei" all'interlocutore in modo cordiale ma formale.
-3. Chiedi il nome in modo elegante (es. "Con chi ho il piacere di parlare?" oppure "Mi dica pure il suo nome").
-4. Mantieni le risposte brevi e mirate (massimo 2 frasi), perfette per essere ascoltate a voce.
-5. Non usare mai parentesi, note di regia o testo formattato in markdown. Rispondi solo con le parole esatte da pronunciare.
+LINEE GUIDA DI CONVERSAZIONE (ITALIANO ALTO LIVELLO):
+- Parla in modo spontaneo, elegante e fluido, come una professionista madrelingua italiana di alto livello.
+- Dai SEMPRE del "Lei".
+- RISPONDI CON MASSIMO 1 O 2 FRASI CONCISE. La brevità è fondamentale per l'ascolto vocale.
+
+GESTIONE DATI PRENOTAZIONE:
+Devi raccogliere con garbo solo questi 4 dati:
+1. Nome dell'interlocutore (es: "Con chi ho il piacere di parlare?")
+2. Giorno / Data desiderata (es: "Per quale giorno desidera fissare l'incontro?")
+3. Orario indicativo (es: "Preferisce la mattina o il pomeriggio?")
+4. Motivo/Oggetto dell'incontro (es: "Di cosa voleva parlarne in particolare?")
+
+REGOLE DI FLUSSO:
+- Raccogli UN SOLO DATO alla volta. Non fare mai più domande contemporaneamente.
+- Quando l'utente ti fornisce un dato, riprendilo brevemente per confermarlo e passa al dato successivo.
+- Quando hai tutti e 4 i dati, recita un breve riepilogo finale e conferma la prenotazione.
+
+DIVIETI ASSOLUTI:
+- Vietato usare traduzioni letterali dall'inglese (es: NESSUNA frase come "cosa posso fare per te", "dammi il tuo nome", "comunicarci meglio", "ottimo").
+- Vietato usare parentesi, note registiche, elenchi puntati o formattazione Markdown.
+- Genera ESCLUSIVAMENTE il testo esatto che deve essere pronunciato dalla voce sintetica.
 """
 
-INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso aiutarla?"
+INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso esserle utile?"
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -98,7 +114,7 @@ if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
     if st.session_state.get("last_audio_bytes") != audio_bytes:
         st.session_state["last_audio_bytes"] = audio_bytes
-        with st.spinner("🎧 Trascrizione in corso..."):
+        with st.spinner("🎧 Ascolto in corso..."):
             try:
                 transcription = groq_client.audio.transcriptions.create(
                     file=("audio.wav", audio_bytes),
@@ -113,7 +129,7 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta + Pulizia Testo + Sintesi Vocale
+# 6. Elaborazione Risposta + Sintesi Vocale
 if prompt_da_elaborare:
     if not available_models:
         st.error("Nessun modello di chat risulta accessibile con questa API Key di Groq.")
@@ -124,25 +140,27 @@ if prompt_da_elaborare:
     
     selected_model = available_models[0]
     
-    with st.spinner("BeeVoice sta elaborando la risposta..."):
+    with st.spinner("BeeVoice sta rispondendo..."):
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=st.session_state.chat_history,
                 model=selected_model,
-                temperature=0.3,  # Ridotta per risposte più precise e meno "creative"
-                max_tokens=120
+                temperature=0.2,  # Bassa creatività per garantire la massima aderenza alle regole sintattiche
+                max_tokens=100
             )
 
             risposta_testo = chat_completion.choices[0].message.content.strip()
             
-            # Rimuove eventuali parentesi residuali
+            # Pulizia completa di eventuali parentesi o caratteri di formattazione
             risposta_pulita = re.sub(r'\[.*?\]|\(.*?\)', '', risposta_testo).strip()
+            risposta_pulita = risposta_pulita.replace("*", "").replace("#", "")
+            
             if not risposta_pulita:
                 risposta_pulita = risposta_testo
 
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_pulita})
 
-            # Sintesi vocale ElevenLabs
+            # Sintesi vocale con ElevenLabs
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_pulita,
                 voice_id="Xb7hH8MSUJpSbSDYk0k2",
