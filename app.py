@@ -29,8 +29,8 @@ if not elevenlabs_key:
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# Selezione diretta del modello Groq di produzione
-ACTIVE_MODEL = "llama-3.3-70b-versatile"
+# Modello Groq 100% universale su tutte le API Key
+ACTIVE_MODEL = "llama-3.1-8b-instant"
 
 # 3. Gestione Persistence (bookings.json)
 BOOKINGS_FILE = "bookings.json"
@@ -102,7 +102,7 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs (Voce Standard Garantita)
+# 6. Elaborazione Risposta + Sintesi Vocale ElevenLabs
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
@@ -119,7 +119,7 @@ if prompt_da_elaborare:
             risposta_testo = chat_completion.choices[0].message.content.strip()
             st.session_state.chat_history.append({"role": "assistant", "content": risposta_testo})
 
-            # Voce George (JBFqnCBsd6RMkjVDRZzb) — Default 100% free per API ElevenLabs
+            # Voce George (JBFqnCBsd6RMkjVDRZzb) — Default Standard ElevenLabs
             audio_generator = eleven_client.text_to_speech.convert(
                 text=risposta_testo,
                 voice_id="JBFqnCBsd6RMkjVDRZzb",
