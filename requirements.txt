@@ -1,4 +1,3 @@
 streamlit
 google-generativeai
 elevenlabs
-streamlit-mic-recorder
