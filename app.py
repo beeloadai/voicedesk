@@ -26,45 +26,53 @@ if not groq_key or not elevenlabs_key:
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
-# 3. Rilevamento / Fallback Automatico Modello Groq
-PREFERRED_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.2-11b-vision-preview",
-    "llama3-70b-8192",
-    "mixtral-8x7b-32768"
-]
-
-def get_working_model():
+# 3. Selezione Sicura del Modello Chat (Escludendo modelli non chat/terze parti)
+def get_safe_chat_model():
     try:
         available_models = [m.id for m in groq_client.models.list().data]
-        for model in PREFERRED_MODELS:
-            if model in available_models:
-                return model
-        return available_models[0] if available_models else "llama-3.3-70b-versatile"
+        
+        # Filtro restrittivo: solo modelli Meta Llama stabili per testo
+        safe_list = [
+            "llama-3.3-70b-versatile",
+            "llama3-70b-8192",
+            "llama-3.1-8b-instant"
+        ]
+        
+        for m in safe_list:
+            if m in available_models:
+                return m
+                
+        # Se nessuno dei preferiti c'è, filtra la lista escludendo i modelli problematici
+        filtered = [
+            m for m in available_models 
+            if not any(bad in m.lower() for bad in ["whisper", "guard", "vision", "orpheus", "canopylabs", "safetensors"])
+        ]
+        return filtered[0] if filtered else "llama-3.3-70b-versatile"
     except Exception:
         return "llama-3.3-70b-versatile"
 
-ACTIVE_MODEL = get_working_model()
+ACTIVE_MODEL = get_safe_chat_model()
 
-# 4. System Prompt per il Flusso Conversazionale
+# 4. System Prompt Elegante e Naturale
 SYSTEM_INSTRUCTION = """
-Sei BeeVoice, l'assistente vocale esecutiva di Beeload.
-Il tuo obiettivo è organizzare un appuntamento raccogliendo:
-1. Nome dell'interlocutore
-2. Giorno
-3. Orario
-4. Motivo dell'incontro
+Sei BeeVoice, la segretaria esecutiva di Beeload. Rispondi al telefono per conto dell'azienda in modo estremamente professionale, naturale, caldo e fluido.
 
-REGOLE ESSENZIALI:
-- Rispondi SEMPRE in italiano, dando del "Lei" e in modo estremamente professionale e naturale.
-- Mantieni le risposte brevi (1-2 frasi) ideali per un assistente vocale.
-- Consulta sempre la cronologia della conversazione ed evita di richiedere informazioni che l'utente ha già fornito.
-- Non inserire formattazioni speciali, Markdown o testo tra parentesi.
+OBIETTIVO:
+Organizzare un appuntamento raccogliendo con garbo: Nome dell'interlocutore, Giorno, Orario e Motivo dell'incontro.
+
+REGOLE TASSATIVE DI CONVERSAZIONE:
+1. Dai SEMPRE e SOLO del "Lei".
+2. Parla in italiano perfetto e spontaneo, come un'assistente di direzione reale.
+3. Rispondi in modo conciso (massimo 1-2 frasi brevi per l'ascolto vocale).
+4. Guarda sempre la cronologia della conversazione: NON ripetere mai domande a cui l'utente ha già risposto.
+5. Quando l'utente ti fornisce un dato (es. il suo nome), accoglilo con cortesia e fai la domanda successiva in modo naturale.
+6. DIVIETO ASSOLUTO di formule innaturali o tradotte dall'inglese ("non esiti a chiedere", "nostro utente", "richieste di assistenza", "cosa posso assisterti").
+7. Rispondi SOLO con il testo parlato (nessun uso di parentesi, maiuscole o formattazione Markdown).
 """
 
 INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso esserle utile?"
 
-# Inizializzazione Session State
+# Inizializzazione Storico Chat
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
@@ -79,22 +87,23 @@ if "messages" not in st.session_state:
 if "processed_audio_hash" not in st.session_state:
     st.session_state.processed_audio_hash = None
 
-# 5. Visualizzazione Messaggi
+# 5. Visualizzazione Chat
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
         if "audio" in msg:
             st.audio(msg["audio"], format="audio/mp3")
 
-# 6. Registrazione Input Vocale e Testuale
+# 6. Registratore Vocale / Input Testo
 st.write("---")
-st.subheader("🗣️ Parla con BeeVoice")
+st.subheader("🗣️️ Parla con BeeVoice")
 
 audio_input_file = st.audio_input("Registra un messaggio vocale")
 user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
+# Gestione Audio con anti-loop
 if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
     current_hash = hash(audio_bytes)
@@ -116,7 +125,7 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 7. Generazione della Risposta
+# 7. Generazione Risposta Conversazionale
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
     st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
@@ -127,12 +136,12 @@ if prompt_da_elaborare:
                 messages=st.session_state.chat_history,
                 model=ACTIVE_MODEL,
                 temperature=0.3,
-                max_tokens=100
+                max_tokens=90
             )
 
             risposta_testo = completion.choices[0].message.content.strip()
             
-            # Pulizia caratteri speciali
+            # Pulizia caratteri non pronunciabili
             risposta_pulita = re.sub(r'\[.*?\]|\(.*?\)', '', risposta_testo).strip()
             risposta_pulita = risposta_pulita.replace("*", "").replace("#", "")
 
