@@ -26,6 +26,20 @@ if not groq_key or not elevenlabs_key:
 groq_client = Groq(api_key=groq_key.strip())
 eleven_client = ElevenLabs(api_key=elevenlabs_key.strip())
 
+# Selezione Modello
+def get_best_model():
+    try:
+        models = groq_client.models.list()
+        m_ids = [m.id for m in models.data]
+        for pref in ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]:
+            if pref in m_ids:
+                return pref
+        return "llama-3.1-8b-instant"
+    except Exception:
+        return "llama-3.1-8b-instant"
+
+ACTIVE_MODEL = get_best_model()
+
 # 3. Persistence (bookings.json)
 BOOKINGS_FILE = "bookings.json"
 
@@ -38,115 +52,48 @@ def load_bookings():
             return []
     return []
 
-def save_booking(booking_data):
-    bookings = load_bookings()
-    bookings.append(booking_data)
-    with open(BOOKINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(bookings, f, ensure_ascii=False, indent=2)
+# 4. System Prompt Elegante e Naturale
+SYSTEM_INSTRUCTION = """
+Sei BeeVoice, la segretaria esecutiva di Beeload. Rispondi al telefono per conto dell'azienda in modo estremamente professionale, naturale, caldo e fluido.
 
-# 4. Inizializzazione Stato Conversazione
-if "booking_slots" not in st.session_state:
-    st.session_state.booking_slots = {
-        "nome": None,
-        "giorno": None,
-        "orario": None,
-        "motivo": None
-    }
+OBIETTIVO:
+Organizzare un appuntamento raccogliendo con garbo: Nome dell'interlocutore, Giorno, Orario e Motivo dell'incontro.
 
-if "completed" not in st.session_state:
-    st.session_state.completed = False
+REGOLE TASSATIVE DI CONVERSAZIONE:
+1. Dai SEMPRE e SOLO del "Lei".
+2. Parla in italiano perfetto e spontaneo, come un'assistente di direzione reale.
+3. Rispondi in modo conciso (massimo 1-2 frasi brevi per l'ascolto vocale).
+4. Guarda sempre la cronologia della conversazione: NON ripetere mai domande a cui l'utente ha già risposto.
+5. Quando l'utente ti fornisce un dato (es. il suo nome), accoglilo con cortesia e fai la domanda successiva in modo naturale.
+6. DIVIETO ASSOLUTO di formule innaturali o tradotte dall'inglese ("non esiti a chiedere", "nostro utente", "richieste di assistenza", "cosa posso assisterti").
+7. Rispondi SOLO con il testo parlato (nessun uso di parentesi, maiuscole o formattazione Markdown).
+"""
 
-INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Con chi ho il piacere di parlare?"
+INITIAL_GREETING = "Buongiorno, sono BeeVoice di Beeload. Come posso esserle utile?"
+
+# Inizializzazione Storico Chat
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = [
+        {"role": "system", "content": SYSTEM_INSTRUCTION},
+        {"role": "assistant", "content": INITIAL_GREETING}
+    ]
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": INITIAL_GREETING}
     ]
 
-# 5. Parsing Dati Avanzato (con Fallback e Protezione Blocco Loop)
-def parse_and_update_slots(user_text):
-    current = st.session_state.booking_slots
-    
-    prompt = f"""
-    Estrai i dati da questo testo per una prenotazione.
-    STATO ATTUALE: {json.dumps(current, ensure_ascii=False)}
-    TESTO UTENTE: "{user_text}"
+if "processed_audio_hash" not in st.session_state:
+    st.session_state.processed_audio_hash = None
 
-    Restituisci ESCLUSIVAMENTE un JSON con questi campi esatti:
-    {{
-        "nome": "nome e cognome se presente, altrimenti null",
-        "giorno": "data o giorno se presente, altrimenti null",
-        "orario": "ora o fascia oraria se presente, altrimenti null",
-        "motivo": "motivo o argomento se presente, altrimenti null"
-    }}
-    """
-    
-    extracted = {}
-    try:
-        completion = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-8b-instant",
-            temperature=0.0,
-            response_format={"type": "json_object"}
-        )
-        extracted = json.loads(completion.choices[0].message.content)
-    except Exception:
-        extracted = {}
-
-    # Aggiornamento slot tramite JSON estratto
-    for key in ["nome", "giorno", "orario", "motivo"]:
-        val = extracted.get(key)
-        if val and str(val).strip().lower() not in ["null", "none", "", "non specificato"]:
-            st.session_state.booking_slots[key] = str(val).strip()
-
-    # FALLBACK DETERMINISTICO: Evita che il sistema si blocchi se il JSON restituisce null
-    slots = st.session_state.booking_slots
-    clean_input = user_text.strip()
-    
-    # Se il nome è ancora vuoto e l'utente ha inserito 1-3 parole, salva direttamente l'input come Nome
-    if not slots["nome"] and len(clean_input.split()) <= 4 and not any(char.isdigit() for char in clean_input):
-        st.session_state.booking_slots["nome"] = clean_input.title()
-    elif slots["nome"] and not slots["giorno"] and ("lun" in clean_input.lower() or "mar" in clean_input.lower() or "mer" in clean_input.lower() or "gio" in clean_input.lower() or "ven" in clean_input.lower() or "sab" in clean_input.lower() or "dom" in clean_input.lower() or "domani" in clean_input.lower() or "oggi" in clean_input.lower()):
-        st.session_state.booking_slots["giorno"] = clean_input
-    elif slots["nome"] and slots["giorno"] and not slots["orario"] and (any(char.isdigit() for char in clean_input) or ":" in clean_input or "pomeriggio" in clean_input.lower() or "mattina" in clean_input.lower()):
-        st.session_state.booking_slots["orario"] = clean_input
-    elif slots["nome"] and slots["giorno"] and slots["orario"] and not slots["motivo"]:
-        st.session_state.booking_slots["motivo"] = clean_input
-
-# 6. Generazione della Risposta
-def get_next_response():
-    slots = st.session_state.booking_slots
-
-    if not slots["nome"]:
-        return "Mi dica pure, con chi ho il piacere di parlare?"
-    if not slots["giorno"]:
-        return f"Piacere di conoscerla, Signor {slots['nome']}. Per quale giorno desidera fissare l'appuntamento?"
-    if not slots["orario"]:
-        return f"Perfetto per {slots['giorno']}. A che ora le sarebbe più comodo?"
-    if not slots["motivo"]:
-        return "Ottimo. Di cosa desidera trattare durante l'incontro?"
-
-    # Tutti i dati completati
-    if not st.session_state.completed:
-        booking_record = {
-            "nome": slots["nome"],
-            "giorno": slots["giorno"],
-            "orario": slots["orario"],
-            "motivo": slots["motivo"]
-        }
-        save_booking(booking_record)
-        st.session_state.completed = True
-
-    return f"Benissimo, Signor {slots['nome']}. Ho registrato il suo appuntamento per {slots['giorno']} alle ore {slots['orario']} con oggetto {slots['motivo']}. La ringrazio e le auguro una buona giornata."
-
-# 7. Visualizzazione Chat
+# 5. Visualizzazione Chat
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
         if "audio" in msg:
             st.audio(msg["audio"], format="audio/mp3")
 
-# 8. Input Vocale e Testuale
+# 6. Registratore Vocale / Input Testo
 st.write("---")
 st.subheader("🗣️ Parla con BeeVoice")
 
@@ -155,10 +102,13 @@ user_text_input = st.chat_input("Oppure scrivi un messaggio...")
 
 prompt_da_elaborare = None
 
+# Gestione Audio con anti-loop
 if audio_input_file is not None:
     audio_bytes = audio_input_file.read()
-    if st.session_state.get("last_audio_bytes") != audio_bytes:
-        st.session_state["last_audio_bytes"] = audio_bytes
+    current_hash = hash(audio_bytes)
+    
+    if st.session_state.processed_audio_hash != current_hash:
+        st.session_state.processed_audio_hash = current_hash
         with st.spinner("🎧 Ascolto in corso..."):
             try:
                 transcription = groq_client.audio.transcriptions.create(
@@ -174,30 +124,39 @@ if audio_input_file is not None:
 elif user_text_input:
     prompt_da_elaborare = user_text_input
 
-# 9. Pipeline di Esecuzione
+# 7. Generazione Risposta Conversazionale
 if prompt_da_elaborare:
     st.session_state.messages.append({"role": "user", "content": prompt_da_elaborare})
+    st.session_state.chat_history.append({"role": "user", "content": prompt_da_elaborare})
 
-    with st.spinner("BeeVoice sta elaborando..."):
+    with st.spinner("BeeVoice sta rispondendo..."):
         try:
-            # 1. Parsing e aggiornamento sicuro degli slot
-            parse_and_update_slots(prompt_da_elaborare)
+            completion = groq_client.chat.completions.create(
+                messages=st.session_state.chat_history,
+                model=ACTIVE_MODEL,
+                temperature=0.3,
+                max_tokens=90
+            )
 
-            # 2. Selezione della frase di risposta
-            risposta_testo = get_next_response()
+            risposta_testo = completion.choices[0].message.content.strip()
+            
+            # Pulizia caratteri non pronunciabili
+            risposta_pulita = re.sub(r'\[.*?\]|\(.*?\)', '', risposta_testo).strip()
+            risposta_pulita = risposta_pulita.replace("*", "").replace("#", "")
 
-            # 3. Sintesi Vocale ElevenLabs
+            st.session_state.chat_history.append({"role": "assistant", "content": risposta_pulita})
+
+            # Sintesi Vocale ElevenLabs
             audio_generator = eleven_client.text_to_speech.convert(
-                text=risposta_testo,
+                text=risposta_pulita,
                 voice_id="Xb7hH8MSUJpSbSDYk0k2",
                 model_id="eleven_flash_v2_5"
             )
             audio_bytes_response = b"".join(audio_generator)
 
-            # 4. Salvataggio messaggio ed esecuzione rerun
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": risposta_testo,
+                "content": risposta_pulita,
                 "audio": audio_bytes_response
             })
 
@@ -206,15 +165,18 @@ if prompt_da_elaborare:
         except Exception as e:
             st.error(f"Errore nell'elaborazione: {e}")
 
-# 10. Sidebar - Monitoraggio
+# 8. Sidebar
 with st.sidebar:
-    st.header("📊 Stato Dati Incontro")
-    st.json(st.session_state.booking_slots)
+    st.header("⚙️ Modello Attivo")
+    st.caption(f"`{ACTIVE_MODEL}`")
 
-    if st.button("🔄 Reset Conversazione"):
-        st.session_state.booking_slots = {"nome": None, "giorno": None, "orario": None, "motivo": None}
-        st.session_state.completed = False
+    if st.button("🔄 Nuova Conversazione"):
+        st.session_state.chat_history = [
+            {"role": "system", "content": SYSTEM_INSTRUCTION},
+            {"role": "assistant", "content": INITIAL_GREETING}
+        ]
         st.session_state.messages = [{"role": "assistant", "content": INITIAL_GREETING}]
+        st.session_state.processed_audio_hash = None
         st.rerun()
 
     st.write("---")
